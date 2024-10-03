@@ -1,0 +1,6 @@
+fastapi
+requests
+beautifulsoup4
+selenium
+uvicorn
+webdriver_manager
