@@ -42,10 +42,9 @@ Este repositorio contiene soluciones a dos problemas de scraping. A continuació
     Para ejecutar el proyecto en Docker, asegúrate de construir la imagen con el siguiente comando:
 
     ```bash
-    docker build --platform linux/amd64 -t <NAME> .
+    docker build -t <NAME> .
     ```
-
-    Es importante especificar la opción --platform linux/amd64 para poder ejecutar los drivers de Firefox correctamente.
+    
     Alternativamente, puedes usar esta imagen:
 
     ```bash
@@ -56,8 +55,8 @@ Este repositorio contiene soluciones a dos problemas de scraping. A continuació
     docker run -p 8000:8000 kevinportugalmx/scrapper-test:latest
     ```
 
-    ## Notas
+    ## Notas 
 
-    Al ejecutar las peticiones localmente en mi equipo y mi internet, el tiempo promedio por solicitud era de alrededor de 3 segundos. Sin embargo, al ejecutar en la imagen de Docker, los tiempos fueron considerablemente más altos. Esto lo atribuyo a que mi equipo es ARM64 (macOS) y la imagen se construyó para AMD64, dadas las necesidades del driver de Firefox, lo que podría haber causado ciertas ineficiencias. Probablemente se pudo optimizar mucho más, pero estos son los tiempos que se pudieron lograr en las condiciones actuales.
-    Cabe mencionar tambien que es la primera vez que trabajo con Selenium.
-    Espero poder obtener un feedback al respecto, y sobre todo el proyecto. Gracias!
+    Anteriormente hice la prueba con Selenium + Beautiful Soap 4, pero por distintos temas de performance con Docker, decidi refactorizarlo 
+    con PlayWright.
+    Cualquier tipo de feedback es bienvenido. Gracias!

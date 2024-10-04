@@ -1,22 +1,26 @@
-FROM python:3.9-slim
+FROM ubuntu:20.04
 
-RUN apt-get update && apt-get upgrade -y \
-    && apt-get install -y gnupg2 curl ca-certificates postgresql-client \
-    build-essential libpq-dev wget firefox-esr
+ARG DEBIAN_FRONTEND=noninteractive
 
-RUN wget -q "https://github.com/mozilla/geckodriver/releases/download/v0.30.0/geckodriver-v0.30.0-linux64.tar.gz" -O - | tar -xz -C /usr/local/bin
+RUN apt update && apt install -y \
+    python3.9 \
+    python3.9-distutils \
+    python3-pip \
+    curl \
+    unzip \
+    && apt clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1
 
 WORKDIR /app
-
 COPY . /app
 
-RUN pip install -r requirements.txt 
+# Instala las dependencias de Python
+RUN pip install -r requirements.txt
 
-
-ENV PYTHONPATH=/app
+RUN playwright install --with-deps firefox
 
 EXPOSE 8000
-
-RUN ls -la /app/
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

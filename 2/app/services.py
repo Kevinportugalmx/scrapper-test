@@ -1,81 +1,97 @@
 import time
 import logging
-from selenium import webdriver
-from selenium.webdriver.firefox.options import Options as FirefoxOptions
-from selenium.webdriver.firefox.service import Service as FirefoxService
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 from fastapi import HTTPException
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def create_driver() -> webdriver.Firefox:
-    firefox_options = FirefoxOptions()
-    firefox_options.add_argument("--headless")
-    firefox_options.add_argument("--disable-gpu")
-    firefox_options.add_argument("--no-sandbox")
-    firefox_options.add_argument("--disable-dev-shm-usage")
-
-    return webdriver.Firefox(options=firefox_options)
-
-
 def extract_product_data(section) -> dict:
-    name = section.select_one("span.vtex-product-summary-2-x-productBrand")
-    price = section.select_one("div.tiendasjumboqaio-jumbo-minicart-2-x-price")
-    promo_price = section.select_one(
+    name = section.query_selector("span.vtex-product-summary-2-x-productBrand")
+    price = section.query_selector("div.tiendasjumboqaio-jumbo-minicart-2-x-price")
+    promo_price = section.query_selector(
         "div.tiendasjumboqaio-jumbo-minicart-2-x-cencoListPriceWrapper"
     )
 
     return {
-        "name": name.get_text(strip=True) if name else None,
+        "name": name.inner_text().strip() if name else None,
         "price": (
-            promo_price.get_text(strip=True)
+            promo_price.inner_text().strip()
             if promo_price
-            else price.get_text(strip=True) if price else None
+            else price.inner_text().strip() if price else None
         ),
-        "promo_price": price.get_text(strip=True) if promo_price else None,
+        "promo_price": price.inner_text().strip() if promo_price else None,
     }
 
 
 def jumbo_service(url: str):
+    init_service = time.time()
     print("\n" + url + "\n")
 
-    start_time = time.time()
-    driver = create_driver()
-    logger.info(f"Driver created in {time.time() - start_time:.2f} seconds")
-
-    start_time = time.time()
-    driver.get(url)
-    logger.info(f"Page loaded in {time.time() - start_time:.2f} seconds")
-
-    start_time = time.time()
-    products = []
-    scroll_pause_time = 1.5
-    last_height = driver.execute_script("return document.body.scrollHeight")
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(scroll_pause_time)
-
-    while len(products) < 15:
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        product_sections = soup.select(
-            "section.vtex-product-summary-2-x-container.vtex-product-summary-2-x-containerNormal"
+    with sync_playwright() as p:
+        browser = p.firefox.launch(headless=True)
+        context = browser.new_context(
+            viewport={"width": 1280, "height": 1080},
         )
-        products.extend(
-            extract_product_data(section)
-            for section in product_sections
-            if len(products) < 15
+
+        context.route(
+            "**/*",
+            lambda route, request: (
+                route.abort()
+                if request.resource_type in ["image", "stylesheet", "font"]
+                else route.continue_()
+            ),
         )
-        new_height = driver.execute_script("return document.body.scrollHeight")
-        if new_height == last_height:
-            break
-        last_height = new_height
 
-    if not products:
-        raise HTTPException(status_code=404, detail="No products found")
-    
-    logger.info(f"Scraped in {time.time() - start_time:.2f} seconds")
-    logger.info(f"Scraped {len(products)} products")
+        page = context.new_page()
 
-    driver.quit()
-    return products
+        start_time = time.time()
+        page.goto(url, wait_until="domcontentloaded")
+        logger.info(f"Page loaded in {time.time() - start_time:.2f} seconds")
+
+        try:
+            page.wait_for_selector(
+                "section.vtex-product-summary-2-x-container.vtex-product-summary-2-x-containerNormal",
+                timeout=10000,
+            )
+        except Exception as e:
+            logger.error(
+                "Error: El div específico no se encontró en la página. Detalle: %s",
+                str(e),
+            )
+            browser.close()
+            raise HTTPException(
+                status_code=408, detail="Timeout Error: Webpage not found"
+            )
+
+        total_products_found = 0
+        max_products = 15
+        products = []
+
+        while total_products_found < max_products:
+            product_sections = page.query_selector_all(
+                "section.vtex-product-summary-2-x-container.vtex-product-summary-2-x-containerNormal"
+            )
+
+            for section in product_sections:
+                if total_products_found < max_products:
+                    product_data = extract_product_data(section)
+                    if product_data["name"]:
+                        products.append(product_data)
+                        total_products_found += 1
+                        logger.info(f"Product found: {product_data['name']}")
+
+            page.evaluate("window.scrollBy(0, window.innerHeight);")
+            time.sleep(0.5)
+
+            if len(products) >= max_products:
+                logger.info(f"Found {len(products)} products, starting extraction.")
+                break
+
+        logger.info(
+            f"Extracted data for {len(products)} products in {time.time() - start_time:.2f} seconds"
+        )
+        browser.close()
+        logger.info(f"Total time: {time.time() - init_service:.2f} seconds")
+        return products[:max_products]
